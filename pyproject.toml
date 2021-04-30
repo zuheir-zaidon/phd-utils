@@ -2,19 +2,22 @@
 name = "phd_utils"
 version = "0.1.0"
 description = ""
-authors = ["Your Name <you@example.com>"]
+authors = [
+    "Aatif Syed <aatifsyedyp@gmail.com>",
+    "Zuheir Zaidon"
+]
 
 [tool.poetry.scripts]
 tiff-stacker = "phd_utils:tiff_stacker.main"
 
 [tool.poetry.dependencies]
 python = "^3.8"
-ipython = "^7.22.0"
 
 [tool.poetry.dev-dependencies]
 black = "^21.4b2"
 pytest = "^6.2.3"
 mypy = "^0.812"
+ipython = "^7.22.0"
 
 [tool.pytest.ini_options]
 log_cli = true

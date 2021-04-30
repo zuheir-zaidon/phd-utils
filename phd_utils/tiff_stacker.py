@@ -7,9 +7,7 @@ from collections import deque
 from pathlib import Path
 from typing import Iterable, List, TextIO
 
-from IPython.lib.pretty import pretty as pformat
-
-from .third_party import grouper
+from .utils import grouper, pformat
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +30,7 @@ def stack_in_folders(
 
         logger.info(f"Found {len(tifs)} TIFs in {folder}")
 
-        logger.debug(f"TIFs:\n{pformat(tifs, max_seq_length=10)}")
+        logger.debug(f"TIFs:\n{pformat(tifs)}")
 
         for group_number, group in enumerate(
             grouper(iterable=tifs, group_size=files_per_stack)
@@ -60,7 +58,7 @@ def stack_tifs(sources: Iterable[Path], destination: Path, imagemagick_stderr: T
     """
     command = ["convert"]
     sources = map(Path.as_posix, map(Path.absolute, sources))  # type: ignore
-    command.extend(sources)
+    command.extend(map(str, sources))
     command.append(destination.absolute().as_posix())
 
     logger.debug(f"Issuing command {command}")
