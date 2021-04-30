@@ -1,5 +1,4 @@
-from image_stacker import third_party as subject
-import pytest
+from phd_utils import third_party as subject
 
 
 def test_grouper():

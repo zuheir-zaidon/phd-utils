@@ -1,8 +1,11 @@
 [tool.poetry]
-name = "phd-utils"
+name = "phd_utils"
 version = "0.1.0"
 description = ""
 authors = ["Your Name <you@example.com>"]
+
+[tool.poetry.scripts]
+tiff-stacker = "phd_utils:tiff_stacker.main"
 
 [tool.poetry.dependencies]
 python = "^3.8"

@@ -3,7 +3,10 @@ from typing import Iterable
 
 
 def grouper(iterable: Iterable, group_size: int):
-    """https://stackoverflow.com/a/8998040/9838189"""
+    """
+    Split an iterable into group_size groups
+    https://stackoverflow.com/a/8998040/9838189
+    """
 
     it = iter(iterable)
     while True:
