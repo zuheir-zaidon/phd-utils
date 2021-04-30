@@ -33,5 +33,7 @@ def test_stack_in_folders(tmp_path: Path):
     assert contents == ["stack0.tif", "stack1.tif", "stack2.tif"]
 
 
-def test_stack_tifs():
-    subject.stack_tifs()
+def test_stack_tifs(assets: Path):
+    sources = list(assets.iterdir())
+    sources.sort()
+    subject.stack_tifs(sources=sources, destination=assets / "stack0.tif")

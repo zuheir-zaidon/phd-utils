@@ -3,9 +3,12 @@ __version__ = "0.1.0"
 from collections import deque
 from pathlib import Path
 from typing import Iterable, Iterator, List
+from itertools import chain
 import logging
 from IPython.lib.pretty import pretty as pformat
 from .third_party import grouper
+from wand.image import Image
+from wand.sequence import SingleImage
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +36,14 @@ def stack_in_folders(folders: Iterator[Path], frames_per_stack: int):
             stack_tifs(group, stack)
 
 
-def stack_tifs(source: Iterable[Path], destination: Path):
-    destination.touch()
-    deque(map(Path.unlink, source))
+def stack_tifs(sources: Iterable[Path], destination: Path):
+    images = map(lambda p: Image(blob=p.read_bytes()), sources)
+    frames = map(lambda image: image.sequence[0], images)
+
+    new_image = Image()
+    new_image.sequence.extend(frames)
+
+    logger.debug(new_image.sequence)
+
+    with destination.open(mode="w+") as destination:
+        new_image.save(file=destination)
