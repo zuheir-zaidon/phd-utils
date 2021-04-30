@@ -1,6 +1,8 @@
 import filecmp
 import logging
 import shutil
+import sys
+
 from pathlib import Path
 from typing import Iterable
 
@@ -33,10 +35,14 @@ def test_stack_tifs(
     single_images: Iterable[Path], correctly_stacked: Path, tmp_path: Path
 ):
     destination = tmp_path / "stacked.tif"
-    subject.stack_tifs(sources=single_images, destination=destination)
+    subject.stack_tifs(
+        sources=single_images, destination=destination, imagemagick_stderr=sys.stdout
+    )
     assert filecmp.cmp(correctly_stacked, destination, shallow=False)
 
 
 def test_stack_in_folders(experiment_folder: Path):
-    subject.stack_in_folders([experiment_folder], files_per_stack=2)
+    subject.stack_in_folders(
+        [experiment_folder], files_per_stack=2, imagemagick_stderr=sys.stdout
+    )
     assert len(list(experiment_folder.iterdir())) == 3

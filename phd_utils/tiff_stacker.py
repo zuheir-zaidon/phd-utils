@@ -1,10 +1,11 @@
 import argparse
 import logging
 import subprocess
+import sys
 
 from collections import deque
 from pathlib import Path
-from typing import Iterable, Iterator, List
+from typing import Iterable, List, TextIO
 
 from IPython.lib.pretty import pretty as pformat
 
@@ -13,14 +14,16 @@ from .third_party import grouper
 logger = logging.getLogger(__name__)
 
 
-def stack_in_folders(folders: Iterator[Path], files_per_stack: int):
+def stack_in_folders(
+    folders: Iterable[Path], files_per_stack: int, imagemagick_stderr: TextIO
+):
     """For each folder, discover all TIF files, and combine them into stacks comprising of the contents of N of those files
 
     Args:
         folders (Iterator[Path]): The folders to search for TIFs in. The final folder will contain the stacks, with the originals removed
         frames_per_stack (int): How many files to combine into each stack
     """
-    folders = list(filter(Path.is_dir, folders))
+    folders: List[Path] = list(filter(Path.is_dir, folders))  # type: ignore
     logger.debug(f"Creating stacks from contents of each folder in {folders}")
 
     for folder in folders:
@@ -34,19 +37,21 @@ def stack_in_folders(folders: Iterator[Path], files_per_stack: int):
         for group_number, group in enumerate(
             grouper(iterable=tifs, group_size=files_per_stack)
         ):
-            group: List[Path] = list(group)
+            group: List[Path] = list(group)  # type:ignore
             stack = folder / f"stack{group_number}.tif"
             logger.info(
                 f"Making a stacking from {group[0]} to {group[-1]} into {stack}"
             )
 
-            stack_tifs(group, stack)
+            stack_tifs(
+                sources=group, destination=stack, imagemagick_stderr=imagemagick_stderr
+            )
 
             # Now delete all the files
             deque(map(Path.unlink, group))
 
 
-def stack_tifs(sources: Iterable[Path], destination: Path):
+def stack_tifs(sources: Iterable[Path], destination: Path, imagemagick_stderr: TextIO):
     """Call out to imagemagick to do the stacking
 
     Args:
@@ -54,14 +59,14 @@ def stack_tifs(sources: Iterable[Path], destination: Path):
         destination (Path): Image to stack to
     """
     command = ["convert"]
-    sources = map(Path.as_posix, map(Path.absolute, sources))
+    sources = map(Path.as_posix, map(Path.absolute, sources))  # type: ignore
     command.extend(sources)
     command.append(destination.absolute().as_posix())
 
     logger.debug(f"Issuing command {command}")
 
     subprocess.run(
-        command, check=True
+        command, check=True, stderr=imagemagick_stderr
     )  # TODO there is a more pythonic way of doing this
 
 
@@ -84,7 +89,14 @@ def main():
         "--files-per-stack",
         type=int,
         default=2000,
-        help="Number of frames to put in each stack",
+        help="Number of files to combine into each stack. Defaults to 2000",
+    )
+    parser.add_argument(
+        "-i",
+        "--imagemagick-stderr",
+        type=argparse.FileType(mode="w"),
+        default=sys.stdout,
+        help="ImageMagick sometimes emits some benign errors to stderr (like unknown TIFF metadata fields). Specify a logfile to avoid stdout being cluttered",
     )
     parser.add_argument(
         "-l",
@@ -99,4 +111,10 @@ def main():
 
     logger.debug(f"Arguments: {args}")
 
-    stack_in_folders(folders=args.folder, files_per_stack=args.files_per_stack)
+    stack_in_folders(
+        folders=args.folder,
+        files_per_stack=args.files_per_stack,
+        imagemagick_stderr=args.imagemagick_stderr,
+    )
+
+    logger.info("All done!")
