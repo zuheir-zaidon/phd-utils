@@ -1,19 +1,25 @@
 __version__ = "0.1.0"
 
 from collections import deque
+import logging
+import subprocess
 from pathlib import Path
 from typing import Iterable, Iterator, List
-from itertools import chain
-import logging
+
 from IPython.lib.pretty import pretty as pformat
+
 from .third_party import grouper
-from wand.image import Image
-from wand.sequence import SingleImage
 
 logger = logging.getLogger(__name__)
 
 
-def stack_in_folders(folders: Iterator[Path], frames_per_stack: int):
+def stack_in_folders(folders: Iterator[Path], files_per_stack: int):
+    """For each folder, discover all TIF files, and combine them into stacks comprising of the contents of N of those files
+
+    Args:
+        folders (Iterator[Path]): The folders to search for TIFs in. The final folder will contain the stacks, with the originals removed
+        frames_per_stack (int): How many files to combine into each stack
+    """
     folders = list(filter(Path.is_dir, folders))
     logger.debug(f"Creating stacks from contents of each folder in {folders}")
 
@@ -26,24 +32,25 @@ def stack_in_folders(folders: Iterator[Path], frames_per_stack: int):
         logger.debug(f"TIFs:\n{pformat(tifs, max_seq_length=10)}")
 
         for group_number, group in enumerate(
-            grouper(iterable=tifs, group_size=frames_per_stack)
+            grouper(iterable=tifs, group_size=files_per_stack)
         ):
             group: List[Path] = list(group)
-            logger.debug(
-                f"Making a stack of length {len(group)} from {group[0]} to {group[-1]}"
-            )
             stack = folder / f"stack{group_number}.tif"
+            logger.info(
+                f"Making a stacking from {group[0]} to {group[-1]} into {stack}"
+            )
+
             stack_tifs(group, stack)
+
+            # Now delete all the files
+            deque(map(Path.unlink, group))
 
 
 def stack_tifs(sources: Iterable[Path], destination: Path):
-    images = map(lambda p: Image(blob=p.read_bytes()), sources)
-    frames = map(lambda image: image.sequence[0], images)
+    command = ["convert"]
+    sources = map(Path.as_posix, map(Path.absolute, sources))
+    command.extend(sources)
+    command.append(destination.absolute().as_posix())
 
-    new_image = Image()
-    new_image.sequence.extend(frames)
-
-    logger.debug(new_image.sequence)
-
-    with destination.open(mode="w+") as destination:
-        new_image.save(file=destination)
+    logger.debug(f"Issuing command {command}")
+    subprocess.run(command)
