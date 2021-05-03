@@ -18,7 +18,7 @@ def stack_in_folders(
     """For each folder, discover all TIF files, and combine them into stacks comprising of the contents of N of those files
 
     Args:
-        folders (Iterator[Path]): The folders to search for TIFs in. The final folder will contain the stacks, with the originals removed
+        folders (Iterable[Path]): The folders to search for TIFs in. The final folder will contain the stacks, with the originals removed
         frames_per_stack (int): How many files to combine into each stack
     """
     folders: List[Path] = list(filter(Path.is_dir, folders))  # type: ignore
@@ -32,7 +32,7 @@ def stack_in_folders(
 
         logger.debug(f"TIFs:\n{pformat(tifs)}")
 
-        for group_number, group in enumerate(
+        for group_number, group in enumerate(  # `enumerate` gives us the group number
             grouper(iterable=tifs, group_size=files_per_stack)
         ):
             group: List[Path] = list(group)  # type:ignore
@@ -61,7 +61,7 @@ def stack_tifs(sources: Iterable[Path], destination: Path, imagemagick_stderr: T
     command.extend(map(str, sources))
     command.append(destination.absolute().as_posix())
 
-    logger.debug(f"Issuing command {command}")
+    logger.debug(f"Issuing command {pformat(command)}")
 
     subprocess.run(
         command, check=True, stderr=imagemagick_stderr

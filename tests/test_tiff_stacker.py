@@ -14,7 +14,11 @@ logger = logging.getLogger(__name__)
 
 @pytest.fixture
 def single_images(assets: Path) -> Iterable[Path]:
-    files = [path for path in assets.iterdir() if path.name.startswith("single")]
+    files = [
+        path
+        for path in assets.iterdir()
+        if path.name.startswith("single") and path.name.endswith("tif")
+    ]
     files.sort()
     return files
 
