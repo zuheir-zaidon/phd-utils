@@ -59,7 +59,7 @@ def read_displacement_csv(path: Path):
     return df
 
 
-def calculate_displacement(
+def calculate_substrate_displacement(
     reference: pd.DataFrame,
     substrate: pd.DataFrame,
 ):

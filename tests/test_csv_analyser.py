@@ -1,4 +1,4 @@
-import phd_utils.align_deflection_csvs as subject
+import phd_utils.csv_analyser as subject
 import pytest
 from pathlib import Path
 import pandas as pd
@@ -57,7 +57,9 @@ def test_calculate_displacment():
         }
     ).set_index("Frame")
 
-    df = subject.calculate_displacement(reference=reference, substrate=substrate)
+    df = subject.calculate_substrate_displacement(
+        reference=reference, substrate=substrate
+    )
 
     logger.debug(df)
 
