@@ -12,7 +12,7 @@ tiff-stacker = "phd_utils:tiff_stacker.main"
 align-deflection-csvs = "phd_utils:align_deflection_csvs.main"
 
 [tool.poetry.dependencies]
-python = "^3.8"
+python = "~3.8"
 pandas = "^1.2.4"
 
 [tool.poetry.dev-dependencies]
@@ -21,6 +21,8 @@ pytest = "^6.2.3"
 mypy = "^0.812"
 ipython = "^7.22.0"
 ipykernel = "^5.5.3"
+matplotlib = "^3.4.1"
+scipy = "^1.6.3"
 
 [tool.pytest.ini_options]
 log_cli = true
