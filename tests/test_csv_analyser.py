@@ -57,9 +57,7 @@ def test_calculate_displacment():
         }
     ).set_index("Frame")
 
-    df = subject.calculate_substrate_displacement(
-        reference=reference, substrate=substrate
-    )
+    df = subject.merge_and_displace_frames(reference=reference, substrate=substrate)
 
     logger.debug(df)
 

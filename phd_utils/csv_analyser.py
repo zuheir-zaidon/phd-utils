@@ -1,6 +1,7 @@
 import logging
 import argparse
 from pathlib import Path
+from typing import Optional
 import pandas as pd
 import string
 
@@ -58,7 +59,7 @@ def read_displacement_csv(path: Path):
     return df
 
 
-def calculate_substrate_displacement(
+def merge_and_displace_frames(
     reference: pd.DataFrame,
     substrate: pd.DataFrame,
     pipette: pd.DataFrame,
@@ -111,6 +112,41 @@ def calculate_substrate_displacement(
     combined["Y_Delta"] = combined["Y_Delta"] - y_start
 
     return combined
+
+
+def generate_normal_force_and_correct_for_load_positioning(
+    df: pd.DataFrame,
+    initial_x_displacement: float,
+    substrate_tip_position: float,
+    length_of_substrate: float,
+    stiffness_constant_of_substrate: float,
+    stiffness_constant_of_pipette: float,
+    pipette_position_at_rest: Optional[float] = None,
+):
+    displaced_x_delta = df["X_Delta"] + initial_x_displacement
+    bead_to_tip_displacement = (
+        substrate_tip_position - df["Substrate_Y_Displacement"].iloc[0]
+    )
+    length_from_the_tip = length_of_substrate - bead_to_tip_displacement
+    df["Corrected_Deflection"] = (
+        0.5 * (displaced_x_delta * (3 * length_of_substrate - length_from_the_tip))
+    ) / length_from_the_tip
+
+    df["Normal_Force"] = df["Corrected_Deflection"] * stiffness_constant_of_substrate
+
+    # TODO: statistically sound heuristic here!
+    if pipette_position_at_rest is None:
+        pipette_position_at_rest = df["Pipette_Y_Displacement"][
+            : pd.Timedelta(3, "seconds")
+        ].mean()
+
+    df["Pipette_Deflection"] = df["Pipette_Y_Displacement"] - pipette_position_at_rest
+
+    df["Friction_Force"] = df["Pipette_Deflection"] * stiffness_constant_of_pipette
+
+    df["Friction_Coefficient"] = df["Friction_Force"] / df["Normal_Force"]
+
+    return df
 
 
 def main():
