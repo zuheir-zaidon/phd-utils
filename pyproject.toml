@@ -12,7 +12,7 @@ tiff-stacker = "phd_utils:tiff_stacker.main"
 csv-analyser = "phd_utils:csv_analyser.main"
 
 [tool.poetry.dependencies]
-python = "~3.8"
+python = "^3.8"
 pandas = "^1.2.4"
 openpyxl = "^3.0.7"
 scipy = "^1.6.3"
