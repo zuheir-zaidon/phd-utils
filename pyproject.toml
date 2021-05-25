@@ -12,12 +12,11 @@ tiff-stacker = "phd_utils:tiff_stacker.main"
 csv-analyser = "phd_utils:csv_analyser.main"
 
 [tool.poetry.dependencies]
-python = "^3.8"
+python = ">=3.8,<3.10"
 pandas = "^1.2.4"
 openpyxl = "^3.0.7"
 scipy = "^1.6.3"
 bokeh = "^2.3.2"
-tables = "^3.6.1"
 
 [tool.poetry.dev-dependencies]
 black = "^21.4b2"
@@ -26,7 +25,6 @@ mypy = "^0.812"
 ipython = "^7.22.0"
 ipykernel = "^5.5.3"
 matplotlib = "^3.4.1"
-scipy = "^1.6.3"
 
 [tool.pytest.ini_options]
 log_cli = true

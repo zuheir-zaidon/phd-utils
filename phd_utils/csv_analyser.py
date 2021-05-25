@@ -211,11 +211,11 @@ def main():
         help="If the output filename already exists, ovewrite it. Else, the program will raise an error",
     )
     parser.add_argument(
-        "-H",
-        "--hdf",
+        "-j",
+        "--json",
         default=False,
         action="store_true",
-        help="Also save as a `processed.hdf` file, for native pandas loading.",
+        help="Also save as a `processed.json` file, for loading into other programs (like python).",
     )
 
     parser.add_argument(
@@ -274,5 +274,5 @@ def main():
 
     result.to_csv(output_file)
 
-    if args.hdf:
-        result.to_hdf(folder.joinpath("processed.hdf"), key="processed")
+    if args.json:
+        result.to_json(folder.joinpath("processed.json"))
