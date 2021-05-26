@@ -23,6 +23,7 @@ def read_displacement_csv(path: Path):
     """
     df: pd.DataFrame = pd.read_csv(
         path,
+        index_col=False,
         names=[s for s in string.ascii_uppercase],  # A..Z
     )
 
@@ -83,8 +84,8 @@ def merge_and_displace_frames(
         name: str
         number_of_frames = df[f"{name}_Frame"].max()
         instant = df[f"{name}_Frame"] / number_of_frames * experiment_duration
-        df[f"{name}_Instant"] = instant
-        df.set_index(f"{name}_Instant", inplace=True)
+        df[f"Instant"] = instant
+        df.set_index(f"Instant", inplace=True)
 
     combined = pd.concat(
         (reference, substrate, pipette),
