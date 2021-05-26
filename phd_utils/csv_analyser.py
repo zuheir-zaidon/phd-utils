@@ -127,7 +127,9 @@ def generate_normal_force_and_correct_for_load_positioning(
     length_of_substrate: float,
     stiffness_constant_of_substrate: float,
     stiffness_constant_of_pipette: float,
+    reverse_sliding_direction: bool,
     pipette_position_at_rest: Optional[float] = None,
+
 ):
     displaced_x_delta = df["X_Delta"] + initial_x_displacement
     bead_to_tip_displacement = (
@@ -150,7 +152,10 @@ def generate_normal_force_and_correct_for_load_positioning(
             f"Guessing pipette position at rest based on first 3 seconds of measurement (got {pipette_position_at_rest})"
         )
 
-    df["Pipette_Deflection"] = df["Pipette_Y_Position"] - pipette_position_at_rest
+    if reverse_sliding_direction is True: # user said -d
+        df["Pipette_Deflection"] = df["Pipette_Y_Position"] - pipette_position_at_rest
+    else: # user didn't say -d
+        df["Pipette_Deflection"] = pipette_position_at_rest - df["Pipette_Y_Position"]
 
     df["Friction_Force"] = df["Pipette_Deflection"] * stiffness_constant_of_pipette
 
@@ -162,8 +167,8 @@ def generate_normal_force_and_correct_for_load_positioning(
 def main():
     parser = argparse.ArgumentParser(
         description="""
-    Given a list of directories this program will, for each directory:
-    - Read substrate*.csv, reference*.csv and pipette*.csv
+    Given a string, this program will
+    - Read substrate*.csv, reference*.csv and pipette*.csv, where each filename contains that string
     - Convert them to timeseries, and concatenate
     - Resample
     - Do some basic analysis
@@ -171,9 +176,13 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "folder",
-        type=Path,
-        help="""The name of the folder containing the three csvs, with names containing either "reference", "substrate" or "pipette" (one of each)""",
+        "-c",
+        "--filename-contains",
+        type=str,
+        help="""Look for the substrate, reference and pipette csvs which have their filenames containing this number""",
+    )
+    parser.add_argument(
+        "-f", "--folder", type=Path, default=Path.cwd(), help="The folder to look in. Defaults to the current working directory"
     )
     parser.add_argument(
         "-e",
@@ -195,14 +204,8 @@ def main():
     parser.add_argument("-L", "--substrate-length", type=float, required=True)
     parser.add_argument("-s", "--substrate-stiffness", type=float, required=True)
     parser.add_argument("-p", "--pipette-stiffness", type=float, required=True)
-    parser.add_argument("-R", "--pipette-position-at-rest", type=float, required=True)
-    parser.add_argument(
-        "-o",
-        "--output-file-name",
-        type=str,
-        default="processed.csv",
-        help="The name of the file to save the results to. Defaults to `processed.csv`",
-    )
+    parser.add_argument("-R", "--pipette-position-at-rest", type=float, default=None, required=False)
+    parser.add_argument("-d", "--reverse-sliding-direction", default=False, action="store_true")
     parser.add_argument(
         "-O",
         "--overwrite",
@@ -210,14 +213,6 @@ def main():
         action="store_true",
         help="If the output filename already exists, ovewrite it. Else, the program will raise an error",
     )
-    parser.add_argument(
-        "-j",
-        "--json",
-        default=False,
-        action="store_true",
-        help="Also save as a `processed.json` file, for loading into other programs (like python).",
-    )
-
     parser.add_argument(
         "-l",
         "--log-level",
@@ -230,49 +225,77 @@ def main():
     logging.basicConfig(level=args.log_level)
 
     logger.debug(f"Arguments: {args}")
-    folder: Path = args.folder
+       
+    analyse_csv(
+        filename=args.filename_contains,
+        folder=args.folder,
+        experiment_duration=args.experiment_duration,
+        resample_to=args.resample_to,
+        initial_x_displacement=args.initial_x_displacement,
+        substrate_tip_position=args.substrate_tip_position,
+        length_of_substrate=args.substrate_length,
+        stiffness_constant_of_substrate=args.substrate_stiffness,
+        stiffness_constant_of_pipette=args.pipette_stiffness,
+        reverse_sliding_direction=args.reverse_sliding_direction,
+        pipette_position_at_rest=args.pipette_position_at_rest,
+        overwrite=args.overwrite
+    )
 
-    def glob_once(folder: Path, pattern: str):
-        candidates = list(folder.glob(pattern))
-        assert len(candidates) == 1, f"Found more than file for {pattern}: {candidates}"
-        destination_path = candidates.pop()
-        assert destination_path.is_file()
-        logging.info(f"Using {destination_path.as_posix()}")
-        return destination_path
+def glob_once(folder: Path, pattern: str):
+    candidates = list(folder.glob(pattern))
+    assert len(candidates) == 1, f"Found more than file for {pattern}: {candidates}"
+    destination_path = candidates.pop()
+    assert destination_path.is_file()
+    logging.info(f"Using {destination_path.as_posix()}")
+    return destination_path
 
-    substrate_path = glob_once(folder, "*[sS]ubstrate*.csv")
-    reference_path = glob_once(folder, "*[rR]eference*.csv")
-    pipette_path = glob_once(folder, "*[pP]ipette*.csv")
+def analyse_csv(
+    filename: str,
+    folder: Path, # yes
+    experiment_duration: float, # yes
+    resample_to: float, 
+    initial_x_displacement: float, # yes
+    substrate_tip_position: float, # yes
+    length_of_substrate: float,
+    stiffness_constant_of_substrate: float,
+    stiffness_constant_of_pipette: float,
+    reverse_sliding_direction: bool, # yes
+    pipette_position_at_rest: Optional[float],
+    overwrite: bool,
+):
+    """This function does the entire analysis for one experiment"""
+
+    substrate_path = glob_once(folder, f"substrate_{filename}.csv")
+    reference_path = glob_once(folder, f"reference_{filename}.csv")
+    pipette_path = glob_once(folder, f"pipette_{filename}.csv")
 
     merged_and_displaced = merge_and_displace_frames(
         substrate=read_displacement_csv(substrate_path),
         reference=read_displacement_csv(reference_path),
         pipette=read_displacement_csv(pipette_path),
         experiment_duration=pd.Timedelta(
-            value=args.experiment_duration, unit="seconds"
+            value=experiment_duration, unit="seconds"
         ),
-        duration_of_resampled_row=pd.Timedelta(value=args.resample_to, unit="seconds"),
+        duration_of_resampled_row=pd.Timedelta(value=resample_to, unit="seconds"),
     )
 
     result = generate_normal_force_and_correct_for_load_positioning(
         df=merged_and_displaced,
-        initial_x_displacement=args.initial_x_displacement,
-        substrate_tip_position=args.substrate_tip_position,
-        length_of_substrate=args.substrate_length,
-        stiffness_constant_of_substrate=args.substrate_stiffness,
-        stiffness_constant_of_pipette=args.pipette_stiffness,
-        pipette_position_at_rest=args.pipette_position_at_rest,
+        initial_x_displacement=initial_x_displacement,
+        substrate_tip_position=substrate_tip_position,
+        length_of_substrate=length_of_substrate,
+        stiffness_constant_of_substrate=stiffness_constant_of_substrate,
+        stiffness_constant_of_pipette=stiffness_constant_of_pipette,
+        reverse_sliding_direction=reverse_sliding_direction,
+        pipette_position_at_rest=pipette_position_at_rest,
     )
 
-    output_file = folder.joinpath(args.output_file_name)
+    output_file = folder.joinpath(f"processed_{filename}.csv")
     if output_file.exists():
         assert output_file.is_file()
         assert (
-            args.overwrite
+            overwrite is True
         ), f"About to write over existing file {output_file}, but `--overwrite` not specified"
         logger.warn(f"Overwriting file {output_file.as_posix()}")
 
     result.to_csv(output_file)
-
-    if args.json:
-        result.to_json(folder.joinpath("processed.json"))
