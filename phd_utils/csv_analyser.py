@@ -2,8 +2,11 @@ import logging
 import argparse
 from pathlib import Path
 from typing import Optional
+from numpy import cos
 import pandas as pd
 import string
+import datetime
+
 
 logger = logging.getLogger(__name__)
 
@@ -84,8 +87,9 @@ def merge_and_displace_frames(
         name: str
         number_of_frames = df[f"{name}_Frame"].max()
         instant = df[f"{name}_Frame"] / number_of_frames * experiment_duration
-        df[f"Instant"] = instant
-        df.set_index(f"Instant", inplace=True)
+        # pd.Timedelta -> seconds
+        df["Instant"] = instant
+        df.set_index("Instant", inplace=True)
 
     combined = pd.concat(
         (reference, substrate, pipette),
@@ -124,41 +128,58 @@ def merge_and_displace_frames(
 def generate_normal_force_and_correct_for_load_positioning(
     df: pd.DataFrame,
     initial_x_displacement: float,
-    substrate_tip_position: float,
+    initial_substrate_tip_position: float,
     length_of_substrate: float,
     stiffness_constant_of_substrate: float,
     stiffness_constant_of_pipette: float,
     reverse_sliding_direction: bool,
-    pipette_position_at_rest: Optional[float] = None,
-
+    angle_alpha: float,
+    angle_beta: float,
+    substrate_tip_velocity: float, # micrometres per second
+    flexural_rigidity: float,
+    duration_subtrate_tip_is_stationary_for: pd.Timedelta = pd.Timedelta(5, "seconds")
+    # pipette_position_at_rest: Optional[float] = None,
 ):
-    displaced_x_delta = df["X_Delta"] + initial_x_displacement
-    bead_to_tip_displacement = (
-        substrate_tip_position - df["Substrate_Y_Position"].iloc[0]
-    )
+    # Pretend we're at a constant velocity for the whole thing (in micrometers per second)
+    df["Substrate_Tip_Position"] = df.index.total_seconds() * substrate_tip_velocity
+    # Now shift our line to the right, because we're stationary for the first n seconds
+    df["Substrate_Tip_Position"] = df["Substrate_Tip_Position"].shift(freq=duration_subtrate_tip_is_stationary_for)
+    # Fill in the missing values (add a flat section to the line)
+    df["Substrate_Tip_Position"].fillna(0)
+    # Translate up the y axis
+    df["Substrate_Tip_Position"] = df["Substrate_Tip_Position"] + initial_substrate_tip_position
+
+    displaced_x_delta = df["X_Delta"] / cos(angle_beta) + initial_x_displacement
+    bead_to_tip_displacement = df["Pipette_Y_Position"] - df["Substrate_Tip_Position"]
+    
     length_from_the_tip = length_of_substrate - bead_to_tip_displacement
     df["Corrected_Deflection"] = (
-        0.5 * (displaced_x_delta * (3 * length_of_substrate - length_from_the_tip))
-    ) / length_from_the_tip
-
+        displaced_x_delta
+        * stiffness_constant_of_substrate
+        * length_from_the_tip
+        * length_from_the_tip
+        * (3 * length_of_substrate - length_from_the_tip)
+        / (6 * flexural_rigidity * 10 ** 16)
+    )
     df["Normal_Force"] = df["Corrected_Deflection"] * stiffness_constant_of_substrate
 
-    # TODO: statistically sound heuristic here!
-    if pipette_position_at_rest is None:
-        pipette_position_at_rest = df["Pipette_Y_Position"][
-            : pd.Timedelta(3, "seconds")
-        ].mean()
-
-        logger.info(
-            f"Guessing pipette position at rest based on first 3 seconds of measurement (got {pipette_position_at_rest})"
+    if angle_alpha > 0:
+        holder = cos(angle_alpha)
+    else:
+        holder = 1
+        
+    if reverse_sliding_direction is True:  # user said -d
+        df["Pipette_Deflection"] = (
+            df["Pipette_Y_Position"] * holder - df["Pipette_Y_Position"].iloc[0]
+        )
+    else:  # user didn't say -d
+        df["Pipette_Deflection"] = (
+            df["Pipette_Y_Position"].iloc[0] - df["Pipette_Y_Position"] * holder
         )
 
-    if reverse_sliding_direction is True: # user said -d
-        df["Pipette_Deflection"] = df["Pipette_Y_Position"] - pipette_position_at_rest
-    else: # user didn't say -d
-        df["Pipette_Deflection"] = pipette_position_at_rest - df["Pipette_Y_Position"]
-
-    df["Friction_Force"] = df["Pipette_Deflection"] * stiffness_constant_of_pipette
+    df["Friction_Force"] = (
+        df["Pipette_Deflection"] / cos(angle_beta) * stiffness_constant_of_pipette
+    )
 
     df["Friction_Coefficient"] = df["Friction_Force"] / df["Normal_Force"]
 
@@ -183,7 +204,11 @@ def main():
         help="""Look for the substrate, reference and pipette csvs which have their filenames containing this number""",
     )
     parser.add_argument(
-        "-f", "--folder", type=Path, default=Path.cwd(), help="The folder to look in. Defaults to the current working directory"
+        "-f",
+        "--folder",
+        type=Path,
+        default=Path.cwd(),
+        help="The folder to look in. Defaults to the current working directory",
     )
     parser.add_argument(
         "-e",
@@ -203,10 +228,18 @@ def main():
     parser.add_argument("-x", "--initial-x-displacement", type=float, required=True)
     parser.add_argument("-t", "--substrate-tip-position", type=float, required=True)
     parser.add_argument("-L", "--substrate-length", type=float, required=True)
-    parser.add_argument("-s", "--substrate-stiffness", type=float, required=True)
-    parser.add_argument("-p", "--pipette-stiffness", type=float, required=True)
-    parser.add_argument("-R", "--pipette-position-at-rest", type=float, default=None, required=False)
-    parser.add_argument("-d", "--reverse-sliding-direction", default=False, action="store_true")
+    parser.add_argument("-k", "--substrate-stiffness", type=float, required=True)
+    parser.add_argument("-j", "--pipette-stiffness", type=float, required=True)
+    # parser.add_argument("-R", "--pipette-position-at-rest", type=float, default=None, required=False)
+    parser.add_argument("-a", "--angle-alpha", type=float, default=None, required=False)
+    parser.add_argument("-b", "--angle-beta", type=float, default=None, required=False)
+    parser.add_argument("-s", "--speed", type=float, default=None, required=False)
+    parser.add_argument(
+        "-fr", "--flexural-rigidity", type=float, default=None, required=False
+    )
+    parser.add_argument(
+        "-d", "--reverse-sliding-direction", default=False, action="store_true"
+    )
     parser.add_argument(
         "-O",
         "--overwrite",
@@ -226,7 +259,7 @@ def main():
     logging.basicConfig(level=args.log_level)
 
     logger.debug(f"Arguments: {args}")
-       
+
     analyse_csv(
         filename=args.filename_contains,
         folder=args.folder,
@@ -238,9 +271,14 @@ def main():
         stiffness_constant_of_substrate=args.substrate_stiffness,
         stiffness_constant_of_pipette=args.pipette_stiffness,
         reverse_sliding_direction=args.reverse_sliding_direction,
-        pipette_position_at_rest=args.pipette_position_at_rest,
-        overwrite=args.overwrite
+        angle_alpha=args.angle_alpha,
+        angle_beta=args.angle_beta,
+        speed=args.speed,
+        flexural_rigidity=args.flexural_rigidity,
+        # pipette_position_at_rest=args.pipette_position_at_rest,
+        overwrite=args.overwrite,
     )
+
 
 def glob_once(folder: Path, pattern: str):
     candidates = list(folder.glob(pattern))
@@ -250,18 +288,23 @@ def glob_once(folder: Path, pattern: str):
     logging.info(f"Using {destination_path.as_posix()}")
     return destination_path
 
+
 def analyse_csv(
     filename: str,
-    folder: Path, # yes
-    experiment_duration: float, # yes
-    resample_to: float, 
-    initial_x_displacement: float, # yes
-    substrate_tip_position: float, # yes
+    folder: Path,  # yes
+    experiment_duration: float,  # yes
+    resample_to: float,
+    initial_x_displacement: float,  # yes
+    substrate_tip_position: float,  # yes
     length_of_substrate: float,
     stiffness_constant_of_substrate: float,
     stiffness_constant_of_pipette: float,
-    reverse_sliding_direction: bool, # yes
-    pipette_position_at_rest: Optional[float],
+    reverse_sliding_direction: bool,  # yes
+    angle_alpha: float,
+    angle_beta: float,
+    speed: float,
+    flexural_rigidity: float,
+    # pipette_position_at_rest: Optional[float],
     overwrite: bool,
 ):
     """This function does the entire analysis for one experiment"""
@@ -274,21 +317,23 @@ def analyse_csv(
         substrate=read_displacement_csv(substrate_path),
         reference=read_displacement_csv(reference_path),
         pipette=read_displacement_csv(pipette_path),
-        experiment_duration=pd.Timedelta(
-            value=experiment_duration, unit="seconds"
-        ),
+        experiment_duration=pd.Timedelta(value=experiment_duration, unit="seconds"),
         duration_of_resampled_row=pd.Timedelta(value=resample_to, unit="seconds"),
     )
 
     result = generate_normal_force_and_correct_for_load_positioning(
         df=merged_and_displaced,
         initial_x_displacement=initial_x_displacement,
-        substrate_tip_position=substrate_tip_position,
+        initial_substrate_tip_position=substrate_tip_position,
         length_of_substrate=length_of_substrate,
         stiffness_constant_of_substrate=stiffness_constant_of_substrate,
         stiffness_constant_of_pipette=stiffness_constant_of_pipette,
         reverse_sliding_direction=reverse_sliding_direction,
-        pipette_position_at_rest=pipette_position_at_rest,
+        angle_alpha=angle_alpha,
+        angle_beta=angle_beta,
+        substrate_tip_velocity=speed,
+        flexural_rigidity=flexural_rigidity,
+        # pipette_position_at_rest=pipette_position_at_rest,
     )
 
     output_file = folder.joinpath(f"processed_{filename}.csv")
