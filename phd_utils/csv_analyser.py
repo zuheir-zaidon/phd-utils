@@ -135,23 +135,33 @@ def generate_normal_force_and_correct_for_load_positioning(
     reverse_sliding_direction: bool,
     angle_alpha: float,
     angle_beta: float,
-    substrate_tip_velocity: float, # micrometres per second
+    substrate_tip_velocity: float,  # micrometres per second
     flexural_rigidity: float,
     duration_subtrate_tip_is_stationary_for: pd.Timedelta = pd.Timedelta(5, "seconds")
     # pipette_position_at_rest: Optional[float] = None,
 ):
     # Pretend we're at a constant velocity for the whole thing (in micrometers per second)
     df["Substrate_Tip_Position"] = df.index.total_seconds() * substrate_tip_velocity
+    shifted = pd.DataFrame(
+        df["Substrate_Tip_Position"].shift(freq=duration_subtrate_tip_is_stationary_for)
+    )
     # Now shift our line to the right, because we're stationary for the first n seconds
-    df["Substrate_Tip_Position"] = df["Substrate_Tip_Position"].shift(freq=duration_subtrate_tip_is_stationary_for)
+    df = pd.merge_asof(
+        df.reset_index().drop(columns="Substrate_Tip_Position"),
+        shifted.reset_index(),
+        on="Instant",
+    )
+    df.set_index("Instant", inplace=True)
     # Fill in the missing values (add a flat section to the line)
-    df["Substrate_Tip_Position"].fillna(0)
+    df["Substrate_Tip_Position"].fillna(0, inplace=True)
     # Translate up the y axis
-    df["Substrate_Tip_Position"] = df["Substrate_Tip_Position"] + initial_substrate_tip_position
+    df["Substrate_Tip_Position"] = (
+        df["Substrate_Tip_Position"] + initial_substrate_tip_position
+    )
 
     displaced_x_delta = df["X_Delta"] / cos(angle_beta) + initial_x_displacement
     bead_to_tip_displacement = df["Pipette_Y_Position"] - df["Substrate_Tip_Position"]
-    
+
     length_from_the_tip = length_of_substrate - bead_to_tip_displacement
     df["Corrected_Deflection"] = (
         displaced_x_delta
@@ -167,15 +177,15 @@ def generate_normal_force_and_correct_for_load_positioning(
         holder = cos(angle_alpha)
     else:
         holder = 1
-        
+
     if reverse_sliding_direction is True:  # user said -d
         df["Pipette_Deflection"] = (
-            df["Pipette_Y_Position"] * holder - df["Pipette_Y_Position"].iloc[0]
-        )
+            df["Pipette_Y_Position"] - df["Pipette_Y_Position"].iloc[0]
+        ) / holder
     else:  # user didn't say -d
         df["Pipette_Deflection"] = (
-            df["Pipette_Y_Position"].iloc[0] - df["Pipette_Y_Position"] * holder
-        )
+            df["Pipette_Y_Position"].iloc[0] - df["Pipette_Y_Position"]
+        ) / holder
 
     df["Friction_Force"] = (
         df["Pipette_Deflection"] / cos(angle_beta) * stiffness_constant_of_pipette
